@@ -17,7 +17,7 @@ if __name__ == '__main__':
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
-    model_name = ''
+    model_name = 'test_'
     model_name += 'regression_' if K_REGRESSION else 'end2end_'
     model_name += LOSS
     model_name = model_name + '_cnn/' if IS_CNN else model_name + '_mlp/'

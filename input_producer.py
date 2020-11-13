@@ -1,10 +1,8 @@
 import numpy as np
 import os
 import queue
-from collections import deque
-
-def normalize(arr):
-    return (arr-arr.min(axis=1, keepdims=True))/(arr.max(axis=1, keepdims=True)-arr.min(axis=1, keepdims=True))
+import time
+import threading
 
 
 class IP:
@@ -37,9 +35,10 @@ class IP:
 
         self.idx = np.arange(0, self.num_split)
 
-    def init_producer(self, shuffle=True, batch_per_class=32):
-        def producer():
-            while self.stack_counter<batch_per_class*5:
+    def _init_queue(self, shuffle=True, batch_per_class=32):
+        # print('subthread start')
+        while True:
+            while self.stack_counter<batch_per_class*100:
                 if self.batch_index%self.num_split==0:
                     self.batch_index = self.batch_index//self.num_split
 
@@ -65,19 +64,30 @@ class IP:
 
                 self.batch_index = (self.batch_index+1)%self.num_split
                 self.stack_counter += self.sample_per_split
+            time.sleep(1)
 
+    @staticmethod
+    def _normalize(arr):
+        return (arr - arr.min(axis=1, keepdims=True)) / (
+                    arr.max(axis=1, keepdims=True) - arr.min(axis=1, keepdims=True))
+
+    def init_producer(self, shuffle=True, batch_per_class=32):
+        t = threading.Thread(target=self._init_queue, args=(shuffle, batch_per_class))
+        t.daemon = True
+        t.start()
+
+        def produce():
+            while self.stack_counter<batch_per_class:
+                time.sleep(1)
             batch_data = np.asarray([self.train_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.stack_counter))], dtype=np.float32)
             batch_target = np.asarray([self.target_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.stack_counter))], dtype=np.float32)
             self.stack_counter -= batch_per_class
-            print(self.stack_counter, self.train_queue[0].qsize())
-
-
-            batch_data = normalize(batch_data)
+            batch_data = self._normalize(batch_data)
             if not self.k_regression:
-                batch_target = normalize(batch_target)
+                batch_target = self._normalize(batch_target)
             return batch_data, batch_target
 
-        return producer
+        return produce
 
 
 if __name__ == '__main__':
