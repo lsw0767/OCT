@@ -7,7 +7,7 @@ import threading
 
 class IP:
     def __init__(self, is_train=True, k_regression=True, order=4,
-                 num_index=3, num_split=9, sample_per_split=50*1000):
+                 num_index=3, num_split=18, sample_per_split=5*1000):
         self.is_train = is_train
         self.k_regression = k_regression
         self.num_index = num_index
@@ -27,7 +27,6 @@ class IP:
         self.target_list = np.asarray(target_list)
 
         self.batch_index = 0
-        self.stack_counter = 0
         self.load_counter = 0
 
         self.train_queue = [queue.Queue() for _ in range(num_index)]
@@ -38,7 +37,7 @@ class IP:
     def _init_queue(self, shuffle=True, batch_per_class=32):
         # print('subthread start')
         while True:
-            while self.stack_counter<batch_per_class*100:
+            while self.target_queue[0].qsize()<batch_per_class*10:
                 if self.batch_index%self.num_split==0:
                     self.batch_index = self.batch_index//self.num_split
 
@@ -61,9 +60,7 @@ class IP:
                     for i in range(self.num_index):
                         for _ in range(self.sample_per_split):
                             self.target_queue[i].put(self.target_list[i])
-
                 self.batch_index = (self.batch_index+1)%self.num_split
-                self.stack_counter += self.sample_per_split
             time.sleep(1)
 
     @staticmethod
@@ -75,13 +72,12 @@ class IP:
         t = threading.Thread(target=self._init_queue, args=(shuffle, batch_per_class))
         t.daemon = True
         t.start()
+        time.sleep(3)
 
         def produce():
-            while self.stack_counter<batch_per_class:
-                time.sleep(1)
-            batch_data = np.asarray([self.train_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.stack_counter))], dtype=np.float32)
-            batch_target = np.asarray([self.target_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.stack_counter))], dtype=np.float32)
-            self.stack_counter -= batch_per_class
+            #     time.sleep(1)
+            batch_data = np.asarray([self.train_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.target_queue[0].qsize()))], dtype=np.float32)
+            batch_target = np.asarray([self.target_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.target_queue[0].qsize()))], dtype=np.float32)
             batch_data = self._normalize(batch_data)
             if not self.k_regression:
                 batch_target = self._normalize(batch_target)
