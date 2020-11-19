@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # K-Index Estimateion System with Deep Learning
 
 The goal of this projet is to replace the OSA H/W device to S/W estimation system,
@@ -22,28 +21,7 @@ so that acquired raw signals can be compensated without H/W device
  3. Parametric estimation system
  - system overview will ve updated
  
- 
 
-=======
-# K-Linear Estimateion System with Deep Learning
-The goal of this projet is to replace the OSA H/W device to S/W estimation system,
-so that acquired raw signals can be compensated without H/W device
- --------
- ## Data structure
- > Each K-Index
- > > Each Sample
- > > > 2D Raw Signal 
-
-* data would not be provided 
- -------
- ## System Overview
- 1. K-linear curve parameter estimation system
- 
- 
- 2. End2End compensated signal estimation system
- 
- -------
->>>>>>> main
 ## How to run
 #### Step 1. data preprocessing
     python extract_k-index.py
