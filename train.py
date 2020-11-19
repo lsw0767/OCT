@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tqdm
 
-from model import AE, End2End
+from model.model import Regression, End2End
 from input_producer import IP
 from utils import *
 
@@ -26,17 +26,18 @@ if __name__ == '__main__':
     mkdir(img_path)
 
     if K_REGRESSION:
-        model = AE(ORDER+1, LOSS, IS_CNN)
+        model = Regression(ORDER+1, LOSS, IS_CNN)
     else:
         model = End2End(LOSS, IS_CNN)
 
-    train_producer = IP(k_regression=K_REGRESSION).init_producer(batch_per_class=32)
-    test_producer = IP(k_regression=K_REGRESSION, is_train=False, num_split=1).init_producer(batch_per_class=32)
+    train_producer = IP(k_regression=K_REGRESSION).init_producer(batch_per_class=100)
+    test_producer = IP(k_regression=K_REGRESSION, is_train=False, num_split=1).init_producer(batch_per_class=100)
 
     print('model name: ', model_name)
     writer = tf.summary.create_file_writer(os.path.join('runs', model_name))
     for step in tqdm.tqdm(range(10000)):
         batch_train, batch_target = train_producer()
+        print(batch_train[0])
 
         loss = model.train_on_batch(batch_train, batch_target)
         if step%100==0:

@@ -3,9 +3,9 @@ import tensorflow as tf
 L2_NORM = 1e-5
 
 
-class AE(tf.keras.Model):
+class Regression(tf.keras.Model):
     def __init__(self, n_params, loss, is_cnn=True):
-        super(AE, self).__init__()
+        super(Regression, self).__init__()
         self.optimizer = tf.keras.optimizers.Adam(1e-3)
         self.loss = tf.keras.losses.MeanAbsoluteError() if loss=='mae' else tf.keras.losses.MeanSquaredError()
 
