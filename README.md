@@ -27,5 +27,5 @@ so that acquired raw signals can be compensated without H/W device
     python extract_k-index.py
     python preporcess.py
 #### Step 2. run train.py
-    python train.py
+    python train_parametric.py
 training arguments will be updated
