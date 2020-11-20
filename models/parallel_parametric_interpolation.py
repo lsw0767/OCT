@@ -45,7 +45,8 @@ class ParametricInterpolation(tf.keras.layers.Layer):
 
         output = tf.multiply(x, k)
         output = tf.reduce_sum(output, axis=-1)
-        return output
+
+        return output, curve_val
 
 
 
