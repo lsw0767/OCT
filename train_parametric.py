@@ -9,6 +9,7 @@ ORDER = 4
 LOSS = 'mae'
 IS_CNN = True
 batch_size = 32
+test_iter = 10
 
 if __name__ == '__main__':
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -37,25 +38,27 @@ if __name__ == '__main__':
 
         loss = model.train_on_batch(batch_train, batch_target)
         if step%100==0:
-            batch_test, batch_target = test_producer()
-            test_loss = model.get_loss(batch_test, batch_target)
-            # print('step: {}, train loss: {:.6f}, test loss: {:.6f}'.format(step, loss, test_loss))
+            test_loss = 0.
+            for i in range(test_iter):
+                batch_test, batch_target = test_producer()
+                test_loss += model.get_loss(batch_test, batch_target)
 
-            # save_figs(batch_test, batch_target, model, img_path, step, regression=K_REGRESSION)
-            # save_figs(batch_test, batch_target, model, img_path, step, converting=False, regression=K_REGRESSION)
-            converted = save_figs_to_arr(batch_test, batch_target, model, regression=False)[:, :, :3]
+            batch_out, _, curve = model(batch_train, batch_target, return_curve=True)
+            figs = [batch_test[0], batch_out[0], batch_target[0]]
+            converted = save_figs_to_arr(figs)
             converted = tf.convert_to_tensor(converted)
-            signal = save_figs_to_arr(batch_test, batch_target, model, converting=False, regression=False)[:, :, :3]
+            signal = save_figs_to_arr(figs, converting=False)
             signal = tf.convert_to_tensor(signal)
+            curve = save_figs_to_arr([curve[0]], converting=False)
+            curve = tf.convert_to_tensor(curve)
 
             with writer.as_default():
                 tf.summary.scalar('loss/test_loss', test_loss, step=step)
                 tf.summary.scalar('loss_logscale/test_loss', np.log(test_loss), step=step)
                 tf.summary.image('converted', [converted], step=step)
                 tf.summary.image('signal', [signal], step=step)
+                tf.summary.image('curve', [curve], step=step)
 
-        _, params = model(batch_train, batch_target, return_params=True)
         with writer.as_default():
             tf.summary.scalar('loss/loss', loss, step=step)
             tf.summary.scalar('loss_logscale/loss', np.log(loss), step=step)
-            tf.summary.histogram('params', params, step=step)

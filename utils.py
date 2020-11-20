@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 
 def postprocessing(data):
     fft = np.fft.fft(data)
-    log = np.log(abs(fft))
+    log = np.log(abs(fft)+1e-5)
     return log
 
 
@@ -64,29 +64,53 @@ def save_figs(train, target, model, path, step, converting=True, regression=Fals
     plt.close()
 
 
-def save_figs_to_arr(train, target, model, converting=True, regression=False):
-    train = train[0]
-    logit = model([train])[0]
-    target = target[0]
-    if regression:
-        k_index_scaler = [1e13, 1e9, 1e5, 1e1, 1e2]
-        logit = k_warping(train, np.divide(logit, k_index_scaler))
-        target = k_warping(train, np.divide(target, k_index_scaler))
-    if converting:
-        train = postprocessing(train)
-        logit = postprocessing(logit)
-        target = postprocessing(target)
-        train = train[:int(len(train)/2)]
-        logit = logit[:int(len(logit)/2)]
-        target = target[:int(len(target)/2)]
+# def save_figs_to_arr(train, target, model, converting=True, regression=False):
+#     logit = model(train)[0]
+#     train = train[0]
+#     target = target[0]
+#     if regression:
+#         k_index_scaler = [1e13, 1e9, 1e5, 1e1, 1e2]
+#         logit = k_warping(train, np.divide(logit, k_index_scaler))
+#         target = k_warping(train, np.divide(target, k_index_scaler))
+#     if converting:
+#         train = postprocessing(train)
+#         logit = postprocessing(logit)
+#         target = postprocessing(target)
+#         train = train[:int(len(train)/2)]
+#         logit = logit[:int(len(logit)/2)]
+#         target = target[:int(len(target)/2)]
+#
+#     f = plt.figure()
+#     ax1 = plt.subplot(311)
+#     ax1.plot(train)
+#     ax2 = plt.subplot(312)
+#     ax2.plot(logit)
+#     ax3 = plt.subplot(313)
+#     ax3.plot(target)
+#
+#     buf = io.BytesIO()
+#     f.savefig(buf, format='raw')
+#     buf.seek(0)
+#     arr = np.reshape(np.frombuffer(buf.getvalue(), dtype=np.uint8),
+#                      newshape=(int(f.bbox.bounds[3]), int(f.bbox.bounds[2]), -1))
+#     buf.close()
+#     plt.close(f)
+#     return arr[:, :, :3]
 
+
+def save_figs_to_arr(figs, converting=True):
+    num_img = len(figs)
     f = plt.figure()
-    ax1 = plt.subplot(311)
-    ax1.plot(train)
-    ax2 = plt.subplot(312)
-    ax2.plot(logit)
-    ax3 = plt.subplot(313)
-    ax3.plot(target)
+
+    subplot_idx = num_img*100+11
+    for i in range(num_img):
+        img = figs[i]
+        if converting:
+            img = postprocessing(img)
+            img = img[:int(len(img)/2)]
+
+        ax = plt.subplot(subplot_idx + i)
+        ax.plot(img)
 
     buf = io.BytesIO()
     f.savefig(buf, format='raw')
@@ -95,7 +119,7 @@ def save_figs_to_arr(train, target, model, converting=True, regression=False):
                      newshape=(int(f.bbox.bounds[3]), int(f.bbox.bounds[2]), -1))
     buf.close()
     plt.close(f)
-    return arr
+    return arr[:, :, :3]
 
 
 
