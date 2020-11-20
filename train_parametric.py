@@ -1,17 +1,18 @@
 import tensorflow as tf
 import tqdm
 
-from model.parametric_model import Model
+from models.parametric_model import Model
 from input_producer import IP
 from utils import *
 
 ORDER = 4
-LOSS = 'mse'
-IS_CNN = False
+LOSS = 'mae'
+IS_CNN = True
+batch_size = 32
 
 if __name__ == '__main__':
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -25,13 +26,14 @@ if __name__ == '__main__':
 
     model = Model(ORDER+1, LOSS, IS_CNN)
 
-    train_producer = IP(k_regression=False).init_producer(batch_per_class=100)
-    test_producer = IP(k_regression=False, is_train=False, num_split=1).init_producer(batch_per_class=100)
+    train_producer = IP(k_regression=False).init_producer(batch_per_class=batch_size)
+    test_producer = IP(k_regression=False, is_train=False, num_split=1).init_producer(batch_per_class=batch_size)
 
     print('model name: ', model_name)
     writer = tf.summary.create_file_writer(os.path.join('runs', model_name))
     for step in tqdm.tqdm(range(10000)):
         batch_train, batch_target = train_producer()
+        assert batch_train.shape[0]==batch_size*3
 
         loss = model.train_on_batch(batch_train, batch_target)
         if step%100==0:
