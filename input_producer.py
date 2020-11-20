@@ -37,23 +37,20 @@ class IP:
     def _init_queue(self, shuffle=True, batch_per_class=32):
         # print('subthread start')
         while True:
-            while self.target_queue[0].qsize()<batch_per_class*10:
+            while self.target_queue[0].qsize()<batch_per_class*100:
                 if self.batch_index%self.num_split==0:
                     self.batch_index = self.batch_index//self.num_split
 
                 if shuffle:
                     np.random.shuffle(self.idx)
                 train = [np.load([self.data_list[i, self.idx] for i in range(self.num_index)][i][self.batch_index]) for i in range(self.num_index)]
-                # temp: [3, sample_per_split, 2048, 1000]
                 for i in range(self.num_index):
-                    # self.train_queue[i].append(sample for sample in train[i])
                     for sample in train[i]:
                         self.train_queue[i].put(sample)
 
                 if not self.k_regression:
                     target = [np.load([self.target_list[i, self.idx] for i in range(self.num_index)][i][self.batch_index]) for i in range(self.num_index)]
                     for i in range(self.num_index):
-                        # self.target_queue[i].append(sample for sample in target[i])
                         for sample in target[i]:
                             self.target_queue[i].put(sample)
                 else:
@@ -61,7 +58,7 @@ class IP:
                         for _ in range(self.sample_per_split):
                             self.target_queue[i].put(self.target_list[i])
                 self.batch_index = (self.batch_index+1)%self.num_split
-            time.sleep(1)
+            time.sleep(0.1)
 
     @staticmethod
     def _normalize(arr):
@@ -72,10 +69,9 @@ class IP:
         t = threading.Thread(target=self._init_queue, args=(shuffle, batch_per_class))
         t.daemon = True
         t.start()
-        time.sleep(3)
+        time.sleep(1)
 
         def produce():
-            #     time.sleep(1)
             batch_data = np.asarray([self.train_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.target_queue[0].qsize()))], dtype=np.float32)
             batch_target = np.asarray([self.target_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.target_queue[0].qsize()))], dtype=np.float32)
             batch_data = self._normalize(batch_data)
