@@ -11,7 +11,7 @@ class Model(tf.keras.Model):
     def __init__(self, n_params, loss, is_cnn=True, sig_len=2048):
         super(Model, self).__init__()
         self.sig_len = sig_len
-        self.optimizer = tf.keras.optimizers.Adam(1e-5)
+        self.optimizer = tf.keras.optimizers.Adam(1e-3)
         self.loss = tf.keras.losses.MeanAbsoluteError() if loss=='mae' else tf.keras.losses.MeanSquaredError()
 
         if is_cnn:
@@ -63,15 +63,25 @@ class Model(tf.keras.Model):
             return x
 
     @tf.function
-    def get_loss(self, x, y, is_training=False):
-        return self.loss(y, self(x, is_training=is_training))
+    def get_loss(self, x, y):
+        return self.loss(y, x)
+
+    @tf.function
+    def get_curve_loss(self, curve):
+        curve = tf.abs(curve)
+        split_curve = tf.split(curve, self.sig_len, axis=1)
+        return tf.reduce_mean(split_curve[0]) + tf.reduce_mean(split_curve[-1])
 
     @tf.function
     def train_on_batch(self, x, y):
         with tf.GradientTape() as t:
-            loss = self.get_loss(x, y, True)
-        grad = t.gradient(loss, self.trainable_variables)
+            # loss = self.get_loss(x, y, True)
+            y_, _, curve = self(x, is_training=True, return_curve=True)
+            loss = self.get_loss(y_, y)
+            curve_loss = self.get_curve_loss(curve)
+            total_loss = loss + curve_loss
+        grad = t.gradient(total_loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(grad, self.trainable_variables))
 
-        return loss
+        return loss, curve_loss
 

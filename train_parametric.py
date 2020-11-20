@@ -7,18 +7,18 @@ from utils import *
 
 ORDER = 4
 LOSS = 'mae'
-IS_CNN = True
+IS_CNN = False
 batch_size = 32
 test_iter = 10
 
 if __name__ == '__main__':
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
-    model_name = ''
+    model_name = 'curve_loss_'
     model_name += 'parametric_' + LOSS
     model_name = model_name + '_cnn/' if IS_CNN else model_name + '_mlp/'
     print(model_name)
@@ -32,18 +32,20 @@ if __name__ == '__main__':
 
     print('model name: ', model_name)
     writer = tf.summary.create_file_writer(os.path.join('runs', model_name))
-    for step in tqdm.tqdm(range(10000)):
+    for step in tqdm.tqdm(range(1000000)):
         batch_train, batch_target = train_producer()
         assert batch_train.shape[0]==batch_size*3
 
-        loss = model.train_on_batch(batch_train, batch_target)
-        if step%100==0:
+        loss, curve_loss = model.train_on_batch(batch_train, batch_target)
+        if step%1000==0:
             test_loss = 0.
+            test_curve_loss = 0.
             for i in range(test_iter):
                 batch_test, batch_target = test_producer()
-                test_loss += model.get_loss(batch_test, batch_target)
+                batch_out, _, curve = model(batch_train, batch_target, return_curve=True)
+                test_loss += model.get_loss(batch_out, batch_target)/test_iter
+                test_curve_loss += model.get_curve_loss(curve)/test_iter
 
-            batch_out, _, curve = model(batch_train, batch_target, return_curve=True)
             figs = [batch_test[0], batch_out[0], batch_target[0]]
             converted = save_figs_to_arr(figs)
             converted = tf.convert_to_tensor(converted)
@@ -54,11 +56,11 @@ if __name__ == '__main__':
 
             with writer.as_default():
                 tf.summary.scalar('loss/test_loss', test_loss, step=step)
-                tf.summary.scalar('loss_logscale/test_loss', np.log(test_loss), step=step)
+                tf.summary.scalar('loss/test_curve_loss', test_curve_loss, step=step)
                 tf.summary.image('converted', [converted], step=step)
                 tf.summary.image('signal', [signal], step=step)
                 tf.summary.image('curve', [curve], step=step)
 
         with writer.as_default():
             tf.summary.scalar('loss/loss', loss, step=step)
-            tf.summary.scalar('loss_logscale/loss', np.log(loss), step=step)
+            tf.summary.scalar('loss/curve_loss', curve_loss, step=step)
