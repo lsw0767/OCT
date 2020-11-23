@@ -1,11 +1,23 @@
+"""
+OCT data input producer
+load preprocessed .npy data with threading
+
+Todo:   integrate argparser over preprocess-input_producer-train_env
+        cache memory handling
+        use more process if possible
+"""
 import numpy as np
 import os
-from multiprocessing import Pool
+import tqdm
+import psutil
+
+from subprocess import call, Popen, PIPE
+from multiprocessing import Process
 
 K_index_num = 3
 sample_num = 10
 test_sample_num = 1
-signal_num = 50
+signal_num = 10
 split_num = 10
 
 
@@ -24,7 +36,7 @@ def convert2npy(k_index):
         before = []
         after = []
         idx = train_idx if mode=='train' else test_idx
-        for j in range(len(idx)):
+        for j in tqdm.tqdm(range(len(idx))):
             fname = os.listdir('data/OCT_K_linear/K-index_no.{}/Sample_no.{}/Before_K-linearization'.format(
                 k_index, idx[j, 0]))
             fname = fname[0].split('0')[0]
@@ -66,7 +78,32 @@ def convert2npy(k_index):
                 after = []
                 before = []
 
+def drop_cache():
+    # check = os.popen('top -b | grep buff/cache')
+    # print(check)
+    print(psutil.virtual_memory().cached)
+    if psutil.virtual_memory().cached > 30000000000:
+        # res = os.popen('sudo -S sysctl -w vm.drop_caches=3', 'w').write('010-4121-0767')
+        # print(res)
+
+        # os.popen('010-4121-0767')
+        cmd1 = Popen(['echo', '010-4121-0767'], stdout=PIPE)
+        cmd2 = Popen(['sudo', 'sysctl -w vm.drop_caches=3'], stdin=cmd1.stdout, stdout=PIPE)
+        print(cmd2.stdout.read())
+        # p.communicate('010-4121-0767\n')
+
+
 
 if __name__ == '__main__':
-    with Pool(3) as p:
-        p.map(convert2npy, [1, 2, 3])
+    # with Pool(3) as p:
+    #     p.map(convert2npy, [1, 2, 3])
+
+    # drop_cache()
+
+    p = []
+    for i in range(3):
+        p.append(Process(target=convert2npy, args=(i+1, )))
+        p[i].start()
+    for i in range(3):
+        p[i].join()
+

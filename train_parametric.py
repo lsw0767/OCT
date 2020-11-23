@@ -1,3 +1,10 @@
+"""
+train parametric k-index estimation system
+
+Todo:   integrate argparser over preprocess-input_producer-train_env
+        modulization
+        model save & test module
+"""
 import tensorflow as tf
 import tqdm
 
@@ -7,7 +14,7 @@ from utils import *
 
 ORDER = 4
 LOSS = 'mae'
-IS_CNN = False
+IS_CNN = True
 batch_size = 32
 test_iter = 10
 
@@ -18,7 +25,7 @@ if __name__ == '__main__':
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
-    model_name = 'curve_loss_'
+    model_name = ''
     model_name += 'parametric_' + LOSS
     model_name = model_name + '_cnn/' if IS_CNN else model_name + '_mlp/'
     print(model_name)

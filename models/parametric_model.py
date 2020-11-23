@@ -73,14 +73,24 @@ class Model(tf.keras.Model):
         return tf.reduce_mean(split_curve[0]) + tf.reduce_mean(split_curve[-1])
 
     @tf.function
-    def train_on_batch(self, x, y):
+    def train_on_batch(self, x, y, use_curve_loss=False):
         with tf.GradientTape() as t:
             # loss = self.get_loss(x, y, True)
             y_, _, curve = self(x, is_training=True, return_curve=True)
             loss = self.get_loss(y_, y)
             curve_loss = self.get_curve_loss(curve)
-            total_loss = loss + curve_loss
+            """
+            with t.stop_recording():
+                Todo: calculate peak index for index gradient 
+            """
+            if use_curve_loss:
+                total_loss = loss + curve_loss
+            else:
+                total_loss = loss
         grad = t.gradient(total_loss, self.trainable_variables)
+        # for v in self.trainable_variables:
+        #     dcurve_dx = tf.gradients(curve, v)
+        #     print(dcurve_dx)
         self.optimizer.apply_gradients(zip(grad, self.trainable_variables))
 
         return loss, curve_loss

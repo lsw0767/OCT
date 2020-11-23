@@ -1,12 +1,19 @@
 """
-in 2-d nxn array,
-m, new_pos(m)-1 = K_m
-m, new_pos(m)   = (1-K_m)
+parallel parametric interpolation layer over mini-batch
+
+in 2-d [n, n] array,
+m, new_pos(m)-1 = K(m)
+m, new_pos(m)   = 1-K(m)
 where n=sig_len, 0<=m<=n, 0<=new_pos=int(k_linear_curve(m))<=sig_len-1, k=k_linear_curve(m)-int(k_linear_curve(m))
 
-1. generate nx2 array :[[K_0, 1-K_0], ..., [K_n, 1-K_n]]
-2. build nxn interpolation matrix by tf.scatter_nd
+1. generate [batch, n, 2] array : [[K(0), 1-K(0)], ..., [K(n), 1-K(n)] * batch]
+2. re-arange input signal to [batch, n, 2] : [[x[new_pos(0)-1], x[new_pos(0)]], ..., [x[new_pos(n)-1], x[new_pos(n)]] * batch]
+3. element-wise multiplication
+4. reduce_sum on last axis to generate interpolated signal [batch, n]
 
+in our data, n=2048
+
+Todo:   apply custom gradient through new_pos : peak2peak matching
 """
 import tensorflow as tf
 import numpy as np
@@ -32,6 +39,7 @@ class ParametricInterpolation(tf.keras.layers.Layer):
         curve_val = tf.vectorized_map(fn=lambda x: self._generate_curve(x), elems=params)
         curve_val_int = tf.round(curve_val)
 
+        # k = tf.stop_gradient(curve_val - curve_val_int)
         k = curve_val - curve_val_int
         k = tf.expand_dims(k, -1)
         k = tf.concat([1-k, k], axis=-1)

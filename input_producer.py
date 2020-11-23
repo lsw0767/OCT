@@ -1,3 +1,10 @@
+"""
+OCT data input producer
+load preprocessed .npy data with threading
+
+Todo:   integrate argparser over preprocess-input_producer-train_env
+        independence on shuffled .npy index and queue size
+"""
 import numpy as np
 import os
 import queue
@@ -7,7 +14,7 @@ import threading
 
 class IP:
     def __init__(self, is_train=True, k_regression=True, order=4,
-                 num_index=3, num_split=18, sample_per_split=5*1000):
+                 num_index=3, num_split=9, sample_per_split=4*1000):
         self.is_train = is_train
         self.k_regression = k_regression
         self.num_index = num_index
@@ -35,12 +42,11 @@ class IP:
         self.idx = np.arange(0, self.num_split)
 
     def _init_queue(self, shuffle=True, batch_per_class=32):
-        # print('subthread start')
         while True:
-            while self.target_queue[0].qsize()<batch_per_class*100:
+            # print(self.target_queue[0].qsize(), self.target_queue[1].qsize(), self.target_queue[2].qsize())
+            while self.target_queue[0].qsize()<batch_per_class*200:
                 if self.batch_index%self.num_split==0:
                     self.batch_index = self.batch_index//self.num_split
-
                 if shuffle:
                     np.random.shuffle(self.idx)
                 train = [np.load([self.data_list[i, self.idx] for i in range(self.num_index)][i][self.batch_index]) for i in range(self.num_index)]
