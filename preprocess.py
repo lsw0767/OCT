@@ -2,108 +2,107 @@
 OCT data input producer
 load preprocessed .npy data with threading
 
-Todo:   integrate argparser over preprocess-input_producer-train_env
-        cache memory handling
-        use more process if possible
 """
 import numpy as np
 import os
 import tqdm
-import psutil
 
-from subprocess import call, Popen, PIPE
 from multiprocessing import Process
 
-K_index_num = 3
-sample_num = 10
-test_sample_num = 1
-signal_num = 10
-split_num = 10
+
+def normalize(arr):
+    return (arr - arr.min(axis=1, keepdims=True)) / (
+                arr.max(axis=1, keepdims=True) - arr.min(axis=1, keepdims=True))
 
 
-def convert2npy(k_index):
-    idx = np.zeros([signal_num*sample_num, 2], dtype=np.int32)
-    for m in range(signal_num*sample_num):
-        idx[m, 0] = m//signal_num+1
-        idx[m, 1] = m%signal_num
-    train_idx = idx[:(sample_num-test_sample_num)*signal_num]
-    test_idx = idx[(sample_num-test_sample_num)*signal_num:]
-    print(train_idx.shape, test_idx.shape)
-    np.random.shuffle(train_idx)
+def convert2npy(data_list, mode, split_num=10, pid=0):
+    print('process start: ', mode, pid)
+    assert len(data_list)%split_num==0
+    signal_per_split = len(data_list)/split_num
 
-    for mode in ['train', 'test']:
-        count = 0
-        before = []
-        after = []
-        idx = train_idx if mode=='train' else test_idx
-        for j in tqdm.tqdm(range(len(idx))):
-            fname = os.listdir('data/OCT_K_linear/K-index_no.{}/Sample_no.{}/Before_K-linearization'.format(
-                k_index, idx[j, 0]))
-            fname = fname[0].split('0')[0]
+    count = 0
+    before = None
+    after = None
+    if pid==2:
+        iterator = tqdm.tqdm(enumerate(data_list))
+    else:
+        iterator = enumerate(data_list)
+    for i, item in iterator:
+        temp = open(os.path.join(item[0], 'Before_K-linearization', item[1])).readlines()
+        sample = [line.split() for line in temp]
+        sample = np.asarray(sample, dtype=np.float32).transpose([1, 0])
+        sample = np.reshape(sample, [-1])
+        sample[:-4] = sample[4:]
+        sample = normalize(np.reshape(sample, [1000, 2048])[:999])
+        if before is None:
+            before = sample
+        else:
+            before = np.concatenate([before, sample])
 
-            temp = open('data/OCT_K_linear/K-index_no.{}/Sample_no.{}/Before_K-linearization/{}{}.txt'.format(
-                k_index, idx[j, 0], fname, str(idx[j, 1]).zfill(4)
-            )).readlines()
-            sample = []
-            for line in temp:
-                sample.append(line.split())
-            sample = np.asarray(sample).transpose([1, 0])
-            for x in sample:
-                x = np.asarray(x, dtype=np.float16)
-                before.append(x)
+        temp = open(os.path.join(item[0], 'After_K-linearization', item[1])).readlines()
+        sample = [line.split() for line in temp]
+        sample = np.asarray(sample, dtype=np.float32).transpose([1, 0])
+        sample = np.reshape(sample, [-1])
+        sample[:-4] = sample[4:]
+        sample = normalize(np.reshape(sample, [1000, 2048])[:999])
+        if after is None:
+            after = sample
+        else:
+            after = np.concatenate([after, sample])
 
-            temp = open('data/OCT_K_linear/K-index_no.{}/Sample_no.{}/After_K-linearization/{}{}.txt'.format(
-                k_index, idx[j, 0], fname, str(idx[j, 1]).zfill(4)
-            )).readlines()
-            sample = []
-            for line in temp:
-                sample.append(line.split())
-            sample = np.asarray(sample).transpose([1, 0])
-            for x in sample:
-                x = np.asarray(x, dtype=np.float16)
-                after.append(x)
+        if (i+1)%signal_per_split==0:
+            count+=1
+            shuffle_idx = np.arange(len(after))
+            if mode=='train':
+                np.random.shuffle(shuffle_idx)
+            before = np.expand_dims(np.asarray(before, dtype=np.float32)[shuffle_idx], -1)
+            after = np.expand_dims(np.asarray(after, dtype=np.float32)[shuffle_idx], -1)
+            data = np.concatenate([before, after], axis=-1)
+            print(data.shape)
+            np.save('/cache/preprocess_npy/3index/{}_{}.npy'.format(mode, count, count+split_num*pid), after)
 
-            count += 1
-            if count%10==0:
-                print(k_index, count)
-            if count%(signal_num*sample_num/split_num)==0:
-                shuffle_idx = np.arange(len(after))
-                if mode=='train':
-                    np.random.shuffle(shuffle_idx)
-                after = np.asarray(after, dtype=np.float16)[shuffle_idx]
-                before = np.asarray(before, dtype=np.float16)[shuffle_idx]
-                np.save('data/preprocess_npy/{}/index_{}/after_{}.npy'.format(mode, k_index, int(count//(signal_num*sample_num/split_num))), after)
-                np.save('data/preprocess_npy/{}/index_{}/before_{}.npy'.format(mode, k_index, int(count//(signal_num*sample_num/split_num))), before)
-
-                after = []
-                before = []
-
-def drop_cache():
-    # check = os.popen('top -b | grep buff/cache')
-    # print(check)
-    print(psutil.virtual_memory().cached)
-    if psutil.virtual_memory().cached > 30000000000:
-        # res = os.popen('sudo -S sysctl -w vm.drop_caches=3', 'w').write('010-4121-0767')
-        # print(res)
-
-        # os.popen('010-4121-0767')
-        cmd1 = Popen(['echo', '010-4121-0767'], stdout=PIPE)
-        cmd2 = Popen(['sudo', 'sysctl -w vm.drop_caches=3'], stdin=cmd1.stdout, stdout=PIPE)
-        print(cmd2.stdout.read())
-        # p.communicate('010-4121-0767\n')
-
+            after = None
+            before = None
 
 
 if __name__ == '__main__':
-    # with Pool(3) as p:
-    #     p.map(convert2npy, [1, 2, 3])
+    index_list = ['K-index_no.{}'.format(i+1) for i in range(3)]
+    train_sample = ['Sample_no.{}'.format(i+1) for i in range(9)]
+    train_list = []
+    for index in index_list:
+        for sample in train_sample:
+            sig_list = os.listdir(os.path.join('data', 'OCT_K_linear', index, sample, 'After_K-linearization'))
+            sig_list.sort()
+            for sig in sig_list:
+                assert sig.split('.')[-1]=='txt'
+                train_list.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
+    shuffle_idx = np.arange(len(train_list))
+    np.random.shuffle(shuffle_idx)
+    train_list = np.asarray(train_list)[shuffle_idx]
 
-    # drop_cache()
+    index_list = ['K-index_no.{}'.format(i+1) for i in range(3)]
+    test_sample = ['Sample_no.{}'.format(i+10) for i in range(1)]
+    test_list = []
+    for index in index_list:
+        for sample in train_sample:
+            sig_list = os.listdir(os.path.join('data', 'OCT_K_linear', index, sample, 'After_K-linearization'))
+            sig_list.sort()
+            for sig in sig_list:
+                assert sig.split('.')[-1]=='txt'
+                test_list.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
 
     p = []
-    for i in range(3):
-        p.append(Process(target=convert2npy, args=(i+1, )))
+    num_process = 1
+    assert len(train_list)%num_process==0
+    split_idx = int(len(train_list)/num_process)
+
+    for i in range(num_process):
+        p.append(Process(target=convert2npy, args=(train_list[split_idx*i:split_idx*(i+1)], 'train', 45, i)))
         p[i].start()
-    for i in range(3):
+    p.append(Process(target=convert2npy, args=(test_list, 'test', 5)))
+    p[-1].start()
+    for i in range(num_process):
         p[i].join()
+
+    p[-1].join()
 
