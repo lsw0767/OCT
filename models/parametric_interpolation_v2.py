@@ -9,7 +9,11 @@ where n=sig_len, 0<=m<=n, 0<=new_pos=int(k_linear_curve(m))<=sig_len-1, k=k_line
 1. generate [batch, n, 2] array : [[K(0), 1-K(0)], ..., [K(n), 1-K(n)] * batch]
 2. re-arange input signal to [batch, n, 2] : [[x[new_pos(0)-1], x[new_pos(0)]], ..., [x[new_pos(n)-1], x[new_pos(n)]] * batch]
 3. element-wise multiplication
-    4. reduce_sum on last axis to generate interpolated signal [batch, n]
+4. reduce_sum on last axis to generate interpolated signal [batch, n]
+
+for differentiable indexing in (2), we used softmax-type kernel: k(new_pos(m))*x/sum(k(new_pos(m)))
+where k(new_pos(m))[new_pos(m)] = 1, others are close to 0, so this differentiable formula can replace general indexing
+
 
 in our data, n=2048
 
@@ -46,6 +50,7 @@ class ParametricInterpolation(tf.keras.layers.Layer):
         new_pos = tf.expand_dims(new_pos, -1)        
         x1_index_kernel = tf.exp(-tf.pow(new_pos-tf.cast(self.sig_idx, tf.float32), 4))
         x2_index_kernel = tf.exp(-tf.pow(new_pos-tf.cast(self.sig_idx, tf.float32)-1, 4))
+        # todo: find appropriate power scale
         
         aranged_x1 = tf.tile(tf.expand_dims(x, axis=1), [1, 2048, 1])
         aranged_x1 = tf.reduce_sum(aranged_x1*x1_index_kernel/tf.reduce_sum(x1_index_kernel, axis=-1, keepdims=True), axis=-1)
