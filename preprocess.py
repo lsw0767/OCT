@@ -59,7 +59,7 @@ def convert2npy(data_list, mode, split_num=10, pid=0):
             after = np.expand_dims(np.asarray(after, dtype=np.float32)[shuffle_idx], -1)
             data = np.concatenate([before, after], axis=-1)
             print(data.shape)
-            np.save('/cache/preprocess_npy/3index/{}_{}.npy'.format(mode, count, count+split_num*pid), after)
+            np.save('/cache/preprocess_npy/3index/{}_{}.npy'.format(mode, count+split_num*pid), after)
 
             after = None
             before = None
