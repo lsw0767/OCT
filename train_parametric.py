@@ -10,6 +10,7 @@ import tqdm
 
 from models.parametric_model import Model
 from input_producer import IP
+# from input_producer_with_curve import IP
 from utils import *
 
 ORDER = 4
@@ -25,7 +26,7 @@ if __name__ == '__main__':
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
-    model_name = ''
+    model_name = 'curve_target_'
     model_name += 'parametric_' + LOSS
     model_name = model_name + '_cnn/' if IS_CNN else model_name + '_mlp/'
     print(model_name)
@@ -51,14 +52,15 @@ if __name__ == '__main__':
                 batch_test, batch_target = test_producer()
                 batch_out, _, curve = model(batch_train, batch_target, return_curve=True)
                 test_loss += model.get_loss(batch_out, batch_target)/test_iter
-                test_curve_loss += model.get_curve_loss(curve)/test_iter
+                # test_curve_loss += model.get_curve_loss(curve)/test_iter
 
-            figs = [batch_test[0], batch_out[0], batch_target[0]]
+            idx = np.random.randint(0, 3)*batch_size
+            figs = [batch_test[idx], batch_out[idx], batch_target[idx]]
             converted = save_figs_to_arr(figs)
             converted = tf.convert_to_tensor(converted)
             signal = save_figs_to_arr(figs, converting=False)
             signal = tf.convert_to_tensor(signal)
-            curve = save_figs_to_arr([curve[0]], converting=False)
+            curve = save_figs_to_arr([curve[idx]], converting=False)
             curve = tf.convert_to_tensor(curve)
 
             with writer.as_default():

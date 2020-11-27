@@ -3,3 +3,4 @@ runs/
 *.test.py
 .idea
 __pycache__/
+test/
