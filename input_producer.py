@@ -3,67 +3,46 @@ OCT data input producer
 load preprocessed .npy data with threading
 
 Todo:   integrate argparser over preprocess-input_producer-train_env
-        independence on shuffled .npy index and queue size
+        memory usage should be tested on training situation
 """
 import numpy as np
 import os
-import queue
 import time
 import threading
+import queue
 
 
 class IP:
-    def __init__(self, is_train=True, k_regression=True, order=4,
-                 num_index=3, num_split=9, sample_per_split=4*1000):
+    def __init__(self, path, is_train=True, return_index=False, num_index=3):
+        self.path = path
         self.is_train = is_train
-        self.k_regression = k_regression
-        self.num_index = num_index
-        self.num_split = num_split
-        self.sample_per_split = sample_per_split
+        self.return_index = return_index
+        self.num_indx = num_index
 
-        path = 'data/preprocess_npy/train' if is_train else 'data/preprocess_npy/test'
-        data_list = [[os.path.join(path, 'index_{}'.format(i+1), 'before_{}.npy'.format(j+1))
-                       for j in range(num_split)] for i in range(num_index)]
-        self.data_list = np.asarray(data_list)
+        mode = 'train' if is_train else 'test'
+        data_list = os.listdir(path)
+        data_list.sort()
+        self.data_list = [s for s in data_list if mode in s]
+        self.index_list = np.load('data/k_index_4_scaled.npy') if return_index else None
 
-        if k_regression:
-            target_list = np.load('data/k_index_{}_scaled.npy'.format(order))
-        else:
-            target_list = [[os.path.join(path, 'index_{}'.format(i+1), 'after_{}.npy'.format(j+1))
-                           for j in range(num_split)] for i in range(num_index)]
-        self.target_list = np.asarray(target_list)
+        self.data_queue = queue.Queue()
 
-        self.batch_index = 0
-        self.load_counter = 0
-
-        self.train_queue = [queue.Queue() for _ in range(num_index)]
-        self.target_queue = [queue.Queue() for _ in range(num_index)]
-
-        self.idx = np.arange(0, self.num_split)
-
-    def _init_queue(self, shuffle=True, batch_per_class=32):
+    def _init_queue(self, batch_per_class):
+        idx = 0
         while True:
-            # print(self.target_queue[0].qsize(), self.target_queue[1].qsize(), self.target_queue[2].qsize())
-            while self.target_queue[0].qsize()<batch_per_class*200:
-                if self.batch_index%self.num_split==0:
-                    self.batch_index = self.batch_index//self.num_split
-                if shuffle:
-                    np.random.shuffle(self.idx)
-                train = [np.load([self.data_list[i, self.idx] for i in range(self.num_index)][i][self.batch_index]) for i in range(self.num_index)]
-                for i in range(self.num_index):
-                    for sample in train[i]:
-                        self.train_queue[i].put(sample)
+            if self.data_queue.qsize()<1000*batch_per_class:
+                # print('reload')
+                if self.is_train:
+                    idx = np.random.randint(0, len(self.data_list))
+                temp = np.load(os.path.join(self.path, self.data_list[idx]))
+                shape = temp.shape
+                total_batch = shape[0]//batch_per_class
+                temp = np.reshape(temp[:total_batch*batch_per_class], [total_batch, batch_per_class, shape[-2], shape[-1]])
 
-                if not self.k_regression:
-                    target = [np.load([self.target_list[i, self.idx] for i in range(self.num_index)][i][self.batch_index]) for i in range(self.num_index)]
-                    for i in range(self.num_index):
-                        for sample in target[i]:
-                            self.target_queue[i].put(sample)
-                else:
-                    for i in range(self.num_index):
-                        for _ in range(self.sample_per_split):
-                            self.target_queue[i].put(self.target_list[i])
-                self.batch_index = (self.batch_index+1)%self.num_split
+                for batch in temp:
+                    self.data_queue.put(batch)
+
+                idx = (idx+1)%len(self.data_list)
             time.sleep(0.1)
 
     @staticmethod
@@ -71,28 +50,27 @@ class IP:
         return (arr - arr.min(axis=1, keepdims=True)) / (
                     arr.max(axis=1, keepdims=True) - arr.min(axis=1, keepdims=True))
 
-    def init_producer(self, shuffle=True, batch_per_class=32):
-        t = threading.Thread(target=self._init_queue, args=(shuffle, batch_per_class))
+    def init_producer(self, batch_per_class=32):
+        t = threading.Thread(target=self._init_queue, args=(batch_per_class, ))
         t.daemon = True
         t.start()
-        time.sleep(1)
 
-        def produce():
-            batch_data = np.asarray([self.train_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.target_queue[0].qsize()))], dtype=np.float32)
-            batch_target = np.asarray([self.target_queue[i].get() for i in range(self.num_index) for _ in range(min(batch_per_class, self.target_queue[0].qsize()))], dtype=np.float32)
-            batch_data = self._normalize(batch_data)
-            if not self.k_regression:
-                batch_target = self._normalize(batch_target)
-            return batch_data, batch_target
+    def produce(self):
+        temp = self.data_queue.get()
+        batch_data = temp[:, :, 0]
+        batch_target = temp[:, :, 1]
 
-        return produce
+        return batch_data, batch_target
 
 
 if __name__ == '__main__':
-    ip = IP(is_train=False, num_split=1)
-    producer = ip.init_producer()
+    ip = IP(path='/cache/preprocess_npy/3index', is_train=True)
+    ip.init_producer(100)
+    producer = ip.produce
+    count = 0
     while 1:
         batch_train, batch_target = producer()
-        if len(batch_target)==0:
-            break
-        print(batch_train.shape, batch_target.shape)
+        count+=1
+        if count%1000==0:
+            print(count)
+
