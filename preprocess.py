@@ -6,6 +6,8 @@ load preprocessed .npy data with threading
 import numpy as np
 import os
 import tqdm
+import queue
+
 
 from multiprocessing import Process
 
@@ -15,15 +17,15 @@ def normalize(arr):
                 arr.max(axis=1, keepdims=True) - arr.min(axis=1, keepdims=True))
 
 
-def convert2npy(data_list, mode, split_num=10, pid=0):
+def convert2npy(data_list, mode, split_num=10, pid=0, index_no=0, use_shift=True):
     print('process start: ', mode, pid)
-    assert len(data_list)%split_num==0
+
     signal_per_split = len(data_list)/split_num
 
     count = 0
     before = None
     after = None
-    if pid==2:
+    if pid%4==0:
         iterator = tqdm.tqdm(enumerate(data_list))
     else:
         iterator = enumerate(data_list)
@@ -31,9 +33,13 @@ def convert2npy(data_list, mode, split_num=10, pid=0):
         temp = open(os.path.join(item[0], 'Before_K-linearization', item[1])).readlines()
         sample = [line.split() for line in temp]
         sample = np.asarray(sample, dtype=np.float32).transpose([1, 0])
-        sample = np.reshape(sample, [-1])
-        sample[:-4] = sample[4:]
-        sample = normalize(np.reshape(sample, [1000, 2048])[:999])
+        if use_shift:
+            sample = np.reshape(sample, [-1])
+            sample[:-4] = sample[4:]
+            sample = np.reshape(sample, [1000, 2048])[:500]
+        else:
+            sample = sample[:500]
+        sample = normalize(sample)
         if before is None:
             before = sample
         else:
@@ -42,9 +48,13 @@ def convert2npy(data_list, mode, split_num=10, pid=0):
         temp = open(os.path.join(item[0], 'After_K-linearization', item[1])).readlines()
         sample = [line.split() for line in temp]
         sample = np.asarray(sample, dtype=np.float32).transpose([1, 0])
-        sample = np.reshape(sample, [-1])
-        sample[:-4] = sample[4:]
-        sample = normalize(np.reshape(sample, [1000, 2048])[:999])
+        if use_shift:
+            sample = np.reshape(sample, [-1])
+            sample[:-4] = sample[4:]
+            sample = np.reshape(sample, [1000, 2048])[:500]
+        else:
+            sample = sample[:500]
+        sample = normalize(sample)
         if after is None:
             after = sample
         else:
@@ -58,51 +68,81 @@ def convert2npy(data_list, mode, split_num=10, pid=0):
             before = np.expand_dims(np.asarray(before, dtype=np.float32)[shuffle_idx], -1)
             after = np.expand_dims(np.asarray(after, dtype=np.float32)[shuffle_idx], -1)
             data = np.concatenate([before, after], axis=-1)
-            print(data.shape)
-            np.save('/cache/preprocess_npy/3index/{}_{}.npy'.format(mode, count+split_num*pid), after)
+            fname = '{}_{}.npy'.format(mode, str(count+split_num*pid).zfill(3))
+
+            if pid % 3 == 0:
+                print(fname, data.shape)
+            np.save('/cache/preprocess_npy/index{}/'.format(index_no+1)+fname, data)
 
             after = None
             before = None
 
 
 if __name__ == '__main__':
-    index_list = ['K-index_no.{}'.format(i+1) for i in range(3)]
-    train_sample = ['Sample_no.{}'.format(i+1) for i in range(9)]
+    index_list = ['K-index_no.{}'.format(i+4) for i in range(2)]
+    train_sample = ['Sample{}'.format(i+1) for i in range(9)]
     train_list = []
     for index in index_list:
+        temp = []
         for sample in train_sample:
             sig_list = os.listdir(os.path.join('data', 'OCT_K_linear', index, sample, 'After_K-linearization'))
             sig_list.sort()
             for sig in sig_list:
                 assert sig.split('.')[-1]=='txt'
-                train_list.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
-    shuffle_idx = np.arange(len(train_list))
-    np.random.shuffle(shuffle_idx)
-    train_list = np.asarray(train_list)[shuffle_idx]
+                sig_num = int(sig.split('_')[-1].split('.')[0])
+                if sig_num>50:
+                    continue
+                temp.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
 
-    index_list = ['K-index_no.{}'.format(i+1) for i in range(3)]
-    test_sample = ['Sample_no.{}'.format(i+10) for i in range(1)]
+        shuffle_idx = np.arange(len(temp))
+        np.random.shuffle(shuffle_idx)
+        train_list.append(np.asarray(temp)[shuffle_idx])
+    train_list = np.asarray(train_list)
+
+    index_list = ['K-index_no.{}'.format(i+4) for i in range(2)]
+    test_sample = ['Sample{}'.format(i+10) for i in range(1)]
     test_list = []
     for index in index_list:
-        for sample in train_sample:
+        temp = []
+        for sample in test_sample:
             sig_list = os.listdir(os.path.join('data', 'OCT_K_linear', index, sample, 'After_K-linearization'))
             sig_list.sort()
             for sig in sig_list:
                 assert sig.split('.')[-1]=='txt'
-                test_list.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
+                sig_num = int(sig.split('_')[-1].split('.')[0])
+                if sig_num>50:
+                    continue
+                temp.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
 
-    p = []
-    num_process = 1
-    assert len(train_list)%num_process==0
-    split_idx = int(len(train_list)/num_process)
+        test_list.append(np.asarray(temp))
+    test_list = np.asarray(test_list)
+    process_queue = queue.Queue()
 
-    for i in range(num_process):
-        p.append(Process(target=convert2npy, args=(train_list[split_idx*i:split_idx*(i+1)], 'train', 45, i)))
-        p[i].start()
-    p.append(Process(target=convert2npy, args=(test_list, 'test', 5)))
-    p[-1].start()
-    for i in range(num_process):
-        p[i].join()
+    train_process = 9
+    test_process = 1
 
-    p[-1].join()
+    train_idx = int(len(train_list[0])/train_process)
+    test_idx = int(len(test_list[0])/test_process)
+    print(train_list)
+    print(train_idx, test_idx)
 
+    for i in range(len(train_list)):
+        for j in range(train_process):
+            process_queue.put(
+                Process(target=convert2npy, args=(train_list[i][train_idx*j:train_idx*(j+1)], 'train', 10, j, i+3, False))
+            )
+    for i in range(len(test_list)):
+        for j in range(test_process):
+            process_queue.put(
+                Process(target=convert2npy, args=(test_list[i][test_idx*j:test_idx*(j+1)], 'test', 10, j, i+3, False))
+            )
+
+    parallel_process = 2
+    iters = (train_process + test_process)*3 / parallel_process
+    while process_queue.qsize()>0:
+        p = []
+        for i in range(parallel_process):
+            p.append(process_queue.get())
+            p[-1].start()
+        for a in p:
+            a.join()
