@@ -1,6 +1,5 @@
 data/
 runs/
-*.test.py
+test/
 .idea
 __pycache__/
-test/
