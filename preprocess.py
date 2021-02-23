@@ -1,15 +1,12 @@
 """
-OCT data input producer
-load preprocessed .npy data with threading
+OCT data preprocessor
+generate npy files that contain a bundle of signals
 
 """
+
 import numpy as np
 import os
 import tqdm
-import queue
-
-
-from multiprocessing import Process
 
 
 def normalize(arr):
@@ -17,132 +14,130 @@ def normalize(arr):
                 arr.max(axis=1, keepdims=True) - arr.min(axis=1, keepdims=True))
 
 
-def convert2npy(data_list, mode, split_num=10, pid=0, index_no=0, use_shift=True):
-    print('process start: ', mode, pid)
+def postprocessing(arr):
+    np.log10(abs(np.fft.fft(arr))+1e-5, out=arr)
+    arr_len = int(arr.shape[1]/2)
+    return arr[:, :arr_len]
 
-    signal_per_split = len(data_list)/split_num
 
-    count = 0
-    before = None
-    after = None
-    if pid%4==0:
-        iterator = tqdm.tqdm(enumerate(data_list))
-    else:
-        iterator = enumerate(data_list)
-    for i, item in iterator:
-        temp = open(os.path.join(item[0], 'Before_K-linearization', item[1])).readlines()
-        sample = [line.split() for line in temp]
-        sample = np.asarray(sample, dtype=np.float32).transpose([1, 0])
-        if use_shift:
-            sample = np.reshape(sample, [-1])
-            sample[:-4] = sample[4:]
-            sample = np.reshape(sample, [1000, 2048])[:500]
+def shift(arr, len=4):
+    shape = arr.shape
+    arr = np.reshape(arr, [-1])
+    arr[:-len] = arr[len:]
+    arr = np.reshape(arr, [shape[0], shape[1]])
+    return arr
+
+
+class Preprocessor:
+    def __init__(self, data_path, save_path, target_index, num_sigs, max_sigs=100, ops=None):
+        self.data_path = data_path
+        self.save_path = save_path
+        self.num_sigs = num_sigs
+        self.max_sigs = max_sigs
+        self.ops = ops
+        self.target_index = target_index
+
+        self.read_count = 0
+        self.before_buf = np.zeros([num_sigs*1000, 2048], dtype=np.float16)
+        self.after_buf = np.zeros([num_sigs*1000, 2048], dtype=np.float16)
+
+    def run(self, mode):
+        for i in self.target_index:
+            target = 'K-index_no.{}'.format(str(i).zfill(2))
+            sample_list = os.listdir(os.path.join(self.data_path, target))
+            sample_list.sort()
+
+            new_list = []
+            for sample in sample_list:
+                if not ('txt' in sample or 'csv' in sample or '10' in sample):
+                    new_list.append(sample)
+
+            for s, sample in enumerate(new_list):
+                before_list = self._get_target_files(
+                    os.path.join(self.data_path, target, sample, 'Before_K-linearization2'), mode
+                )
+
+                after_list = self._get_target_files(
+                    os.path.join(self.data_path, target, sample, 'After_K-linearization'), mode
+                )
+
+                full_path = os.path.join(
+                    self.save_path, 'index{}'.format(str(i).zfill(2)), 'sample{}'.format(str(s + 1).zfill(2))
+                )
+                print(full_path)
+                self.read_count = 0
+                for j in tqdm.tqdm(range(len(before_list))):
+                    name = os.path.join(self.data_path, target, sample, 'Before_K-linearization2', before_list[j])
+                    success = self._read_and_merge(name, mode)
+                    if not success:
+                        continue
+
+                    name = os.path.join(self.data_path, target, sample, 'After_K-linearization', after_list[j])
+                    success = self._read_and_merge(name, mode)
+                    if not success:
+                        continue
+
+                    self.read_count += 1
+                    if self.read_count%self.num_sigs==0:
+                        # bundle = np.asarray([self.before_buf, self.after_buf])
+                        self._mkdir(full_path)
+                        np.save(os.path.join(full_path, 'before_'+str((j+1)//self.num_sigs).zfill(2)), self.before_buf)
+                        np.save(os.path.join(full_path, 'after_'+str((j+1)//self.num_sigs).zfill(2)), self.after_buf)
+
+                    if self.read_count==self.max_sigs:
+                        break
+
+    def _get_target_files(self, path, mode):
+        temp = os.listdir(path)
+        temp.sort()
+
+        final_list = []
+        for item in temp:
+            if mode in item:
+                final_list.append(item)
+        return final_list
+
+    def _read_and_merge(self, path, mode):
+        # try:
+        if mode is 'txt':
+            temp = open(path).readlines()
+            temp = [line.split() for line in temp]
+            temp = np.asarray(temp, dtype=np.float32)
+            np.transpose(temp, [1, 0], out=temp)
+        elif mode is 'bin':
+            # temp = open(path, 'rb')
+            temp = np.fromfile(path, np.double)
+            temp = np.reshape(temp, [1000, 2048])
+            temp.astype(np.float16)
         else:
-            sample = sample[:500]
-        sample = normalize(sample)
-        if before is None:
-            before = sample
+            raise Exception('Not supported type')
+        # except:
+        #     return False
+
+        for ops in self.ops:
+            temp = ops(temp)
+
+        if 'Before' in path:
+            self.before_buf[self.read_count%self.num_sigs*1000:(self.read_count%self.num_sigs+1)*1000] = temp
         else:
-            before = np.concatenate([before, sample])
+            self.after_buf[self.read_count%self.num_sigs*1000:(self.read_count%self.num_sigs+1)*1000] = temp
+        return True
 
-        temp = open(os.path.join(item[0], 'After_K-linearization', item[1])).readlines()
-        sample = [line.split() for line in temp]
-        sample = np.asarray(sample, dtype=np.float32).transpose([1, 0])
-        if use_shift:
-            sample = np.reshape(sample, [-1])
-            sample[:-4] = sample[4:]
-            sample = np.reshape(sample, [1000, 2048])[:500]
-        else:
-            sample = sample[:500]
-        sample = normalize(sample)
-        if after is None:
-            after = sample
-        else:
-            after = np.concatenate([after, sample])
+    def _mkdir(self, path):
+        names = os.path.abspath(path).split('/')
+        full_path = '/'
 
-        if (i+1)%signal_per_split==0:
-            count+=1
-            shuffle_idx = np.arange(len(after))
-            if mode=='train':
-                np.random.shuffle(shuffle_idx)
-            before = np.expand_dims(np.asarray(before, dtype=np.float32)[shuffle_idx], -1)
-            after = np.expand_dims(np.asarray(after, dtype=np.float32)[shuffle_idx], -1)
-            data = np.concatenate([before, after], axis=-1)
-            fname = '{}_{}.npy'.format(mode, str(count+split_num*pid).zfill(3))
-
-            if pid % 3 == 0:
-                print(fname, data.shape)
-            np.save('/cache/preprocess_npy/index{}/'.format(index_no+1)+fname, data)
-
-            after = None
-            before = None
+        for name in names:
+            try:
+                full_path = os.path.join(full_path, name)
+                os.mkdir(full_path)
+            except:
+                pass
 
 
 if __name__ == '__main__':
-    index_list = ['K-index_no.{}'.format(i+4) for i in range(2)]
-    train_sample = ['Sample{}'.format(i+1) for i in range(9)]
-    train_list = []
-    for index in index_list:
-        temp = []
-        for sample in train_sample:
-            sig_list = os.listdir(os.path.join('data', 'OCT_K_linear', index, sample, 'After_K-linearization'))
-            sig_list.sort()
-            for sig in sig_list:
-                assert sig.split('.')[-1]=='txt'
-                sig_num = int(sig.split('_')[-1].split('.')[0])
-                if sig_num>50:
-                    continue
-                temp.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
+    # Preprocessor('data/OCT_K_linear', 'data/preprocess_fft', [1, 2, 3, 4, 5], 50, ops=[shift]).run('txt')
+    # with Before~
 
-        shuffle_idx = np.arange(len(temp))
-        np.random.shuffle(shuffle_idx)
-        train_list.append(np.asarray(temp)[shuffle_idx])
-    train_list = np.asarray(train_list)
-
-    index_list = ['K-index_no.{}'.format(i+4) for i in range(2)]
-    test_sample = ['Sample{}'.format(i+10) for i in range(1)]
-    test_list = []
-    for index in index_list:
-        temp = []
-        for sample in test_sample:
-            sig_list = os.listdir(os.path.join('data', 'OCT_K_linear', index, sample, 'After_K-linearization'))
-            sig_list.sort()
-            for sig in sig_list:
-                assert sig.split('.')[-1]=='txt'
-                sig_num = int(sig.split('_')[-1].split('.')[0])
-                if sig_num>50:
-                    continue
-                temp.append([os.path.join('data', 'OCT_K_linear', index, sample), sig])
-
-        test_list.append(np.asarray(temp))
-    test_list = np.asarray(test_list)
-    process_queue = queue.Queue()
-
-    train_process = 9
-    test_process = 1
-
-    train_idx = int(len(train_list[0])/train_process)
-    test_idx = int(len(test_list[0])/test_process)
-    print(train_list)
-    print(train_idx, test_idx)
-
-    for i in range(len(train_list)):
-        for j in range(train_process):
-            process_queue.put(
-                Process(target=convert2npy, args=(train_list[i][train_idx*j:train_idx*(j+1)], 'train', 10, j, i+3, False))
-            )
-    for i in range(len(test_list)):
-        for j in range(test_process):
-            process_queue.put(
-                Process(target=convert2npy, args=(test_list[i][test_idx*j:test_idx*(j+1)], 'test', 10, j, i+3, False))
-            )
-
-    parallel_process = 2
-    iters = (train_process + test_process)*3 / parallel_process
-    while process_queue.qsize()>0:
-        p = []
-        for i in range(parallel_process):
-            p.append(process_queue.get())
-            p[-1].start()
-        for a in p:
-            a.join()
+    Preprocessor('data/OCT_K_linear', '/cache/preprocess', [6, 10, 11], 50, ops=[]).run('bin')
+    # with Before~2

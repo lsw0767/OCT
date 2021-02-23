@@ -36,68 +36,6 @@ def k_warping(signal, params):
     return arr
 
 
-def save_figs(train, target, model, path, step, converting=True, regression=False):
-    train = train[0]
-    logit = model([train])[0]
-    target = target[0]
-    if regression:
-        k_index_scaler = [1e13, 1e9, 1e5, 1e1, 1e2]
-        logit = k_warping(train, np.divide(logit, k_index_scaler))
-        target = k_warping(train, np.divide(target, k_index_scaler))
-    if converting:
-        train = postprocessing(train)
-        logit = postprocessing(logit)
-        target = postprocessing(target)
-        train = train[:int(len(train)/2)]
-        logit = logit[:int(len(logit)/2)]
-        target = target[:int(len(target)/2)]
-
-    ax1 = plt.subplot(311)
-    ax1.plot(train)
-    ax2 = plt.subplot(312)
-    ax2.plot(logit)
-    ax3 = plt.subplot(313)
-    ax3.plot(target)
-
-    img_name = 'converted' + str(step) + '.jpg' if converting else 'signal' + str(step) + '.jpg'
-    plt.savefig(os.path.join(path, img_name))
-    plt.close()
-
-
-# def save_figs_to_arr(train, target, model, converting=True, regression=False):
-#     logit = model(train)[0]
-#     train = train[0]
-#     target = target[0]
-#     if regression:
-#         k_index_scaler = [1e13, 1e9, 1e5, 1e1, 1e2]
-#         logit = k_warping(train, np.divide(logit, k_index_scaler))
-#         target = k_warping(train, np.divide(target, k_index_scaler))
-#     if converting:
-#         train = postprocessing(train)
-#         logit = postprocessing(logit)
-#         target = postprocessing(target)
-#         train = train[:int(len(train)/2)]
-#         logit = logit[:int(len(logit)/2)]
-#         target = target[:int(len(target)/2)]
-#
-#     f = plt.figure()
-#     ax1 = plt.subplot(311)
-#     ax1.plot(train)
-#     ax2 = plt.subplot(312)
-#     ax2.plot(logit)
-#     ax3 = plt.subplot(313)
-#     ax3.plot(target)
-#
-#     buf = io.BytesIO()
-#     f.savefig(buf, format='raw')
-#     buf.seek(0)
-#     arr = np.reshape(np.frombuffer(buf.getvalue(), dtype=np.uint8),
-#                      newshape=(int(f.bbox.bounds[3]), int(f.bbox.bounds[2]), -1))
-#     buf.close()
-#     plt.close(f)
-#     return arr[:, :, :3]
-
-
 def save_figs_to_arr(figs, converting=True):
     num_img = len(figs)
     f = plt.figure()
@@ -120,7 +58,6 @@ def save_figs_to_arr(figs, converting=True):
     buf.close()
     plt.close(f)
     return arr[:, :, :3]
-
 
 
 if __name__ == '__main__':
